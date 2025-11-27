@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Hybrid Virtual Memory Management Simulator</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+   body {
+  font-family: 'Roboto Mono', monospace;
+  margin: 0;
+  padding: 0;
+  text-align: center;
+  overflow-x: hidden;
+  background: linear-gradient(-45deg, #141e30, #243b55, #1a2a6c, #b21f1f, #fdbb2d);
+  background-size: 400% 400%;
+  animation: gradientBackground 20s ease infinite;
+  color: white;
+}
+
+@keyframes gradientBackground {
+  0% { background-position: 0% 50%; }
+  25% { background-position: 50% 50%; }
+  50% { background-position: 100% 50%; }
+  75% { background-position: 50% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+    header, footer {
+      padding: 20px;
+      background-color: #1f1f1f;
+    }
+    .button {
+      margin: 10px;
+      padding: 10px 20px;
+      cursor: pointer;
+      border-radius: 5px;
+      background: #03a9f4;
+      border: none;
+      color: white;
+      transition: background 0.3s ease;
+    }
+    .button:hover {
+      background: #0288d1;
+    }
+    #memory-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      justify-content: center;
+      margin-top: 20px;
+      padding: 10px;
+    }
+    .memory-block {
+      width: 50px;
+      height: 50px;
+      text-align: center;
+      line-height: 50px;
+      border-radius: 5px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+    .memory-block:hover {
+      transform: scale(1.1);
+    }
+    .allocated { background-color: green; }
+    .free { background-color: red; }
+    .swapped { background-color: blue; }
+    .selected { animation: blink 0.5s 2 alternate; }
+    @keyframes blink {
+      50% { opacity: 0; }
+    }
+    #log-container {
+      margin-top: 20px;
+      max-height: 200px;
+      overflow-y: auto;
+      background: #2e2e2e;
+      padding: 10px;
+      border-radius: 5px;
+      text-align: left;
+    }
+    #log-container p {
+      opacity: 0;
+      animation: fadeIn 0.5s forwards;
+    }
+    @keyframes fadeIn {
+      to { opacity: 1; }
+    }
+    .tooltip {
+      position: relative;
+      display: inline-block;
+    }
+    .tooltip .tooltiptext {
+      visibility: hidden;
+      background-color: #333;
+      color: #fff;
+      text-align: center;
+      border-radius: 6px;
+      padding: 5px;
+      position: absolute;
+      z-index: 1;
+      bottom: 125%;
+      left: 50%;
+      margin-left: -60px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      width: 120px;
+    }
+    .tooltip:hover .tooltiptext {
+      visibility: visible;
+      opacity: 1;
+    }
+    #chart-container, #cpu-container, #memory-usage-container {
+      margin-top: 30px;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    section {
+      padding: 20px;
+    }
+    .simulator-controls {
+      background-color: rgba(31, 31, 31, 0.8);
+      padding: 20px;
+      border-radius: 10px;
+      margin: 20px auto;
+      max-width: 500px;
+    }
+    .simulator-controls h2 {
+      margin-top: 0;
+      color: #03a9f4;
+    }
+    .input-group {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 10px 0;
+    }
+    .input-group label {
+      flex: 1;
+      text-align: left;
+      margin-right: 10px;
+    }
+    .input-group input {
+      flex: 2;
+      padding: 8px;
+      border-radius: 5px;
+      border: none;
+      background-color: #2e2e2e;
+      color: white;
+    }
+    .sample-text {
+      font-style: italic;
+      color: #aaa;
+      margin-bottom: 20px;
+    }
+    .memory-pressure {
+      animation: pulseWarning 1s infinite;
+      border: 2px solid red;
+    }
+    @keyframes pulseWarning {
+      0% { box-shadow: 0 0 5px rgba(255,0,0,0.5); }
+      50% { box-shadow: 0 0 20px rgba(255,0,0,0.8); }
+      100% { box-shadow: 0 0 5px rgba(255,0,0,0.5); }
+    }
+    /* New styles for configuration controls */
+    .config-controls {
+      background-color: rgba(31, 31, 31, 0.8);
+      padding: 20px;
+      border-radius: 10px;
+      margin: 20px auto;
+      max-width: 500px;
+    }
+    .config-controls h2 {
+      margin-top: 0;
+      color: #03a9f4;
+    }
+    #memory-value {
+      min-width: 40px;
+      display: inline-block;
+    }
+    .swap-speed {
+      margin-top: 5px;
+      font-size: 12px;
+      color: #aaa;
+    }
+    .swapping {
+      background-color: purple;
+      animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 0.5; }
+      50% { opacity: 1; }
+      100% { opacity: 0.5; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Hybrid Virtual Memory Management Simulator</h1>
+    <div>
+      <div class="tooltip"><button class="button" onclick="allocateMemory()">Allocate</button><span class="tooltiptext">Allocate memory block</span></div>
+      <div class="tooltip"><button class="button" onclick="freeMemory()">Free</button><span class="tooltiptext">Free most recently used</span></div>
+      <div class="tooltip"><button class="button" onclick="swapMemory()">Swap</button><span class="tooltiptext">Swap to disk</span></div>
+      <div class="tooltip"><button class="button" onclick="applyFIFO()">FIFO</button><span class="tooltiptext">First-In-First-Out</span></div>
+      <div class="tooltip"><button class="button" onclick="applyLRU()">LRU</button><span class="tooltiptext">Least Recently Used</span></div>
+      <div class="tooltip"><button class="button" onclick="exportLogs()">Export Logs</button><span class="tooltiptext">Download logs as JSON</span></div>
+    </div>
+  </header>
+
+  <!-- New Configuration Controls Section -->
+  <div class="config-controls">
+    <h2>System Configuration</h2>
+    
+    <div class="input-group">
+      <label for="total-memory">Total Memory (MB):</label>
+      <input type="range" id="total-memory" min="4" max="64" step="4" value="16" oninput="updateMemorySize()">
+      <span id="memory-value">16MB</span>
+    </div>
+    
+    <div class="input-group">
+      <label for="block-size">Block Size (MB):</label>
+      <select id="block-size" onchange="updateBlockSize()">
+        <option value="1">1MB</option>
+        <option value="2" selected>2MB</option>
+        <option value="4">4MB</option>
+      </select>
+    </div>
+    
+    <div class="input-group">
+      <label for="disk-type">Disk Type:</label>
+      <select id="disk-type" onchange="updateDiskSpeed()">
+        <option value="hdd">HDD (Slow)</option>
+        <option value="ssd">SSD (Fast)</option>
+        <option value="nvme">NVMe (Very Fast)</option>
+      </select>
+      <div class="swap-speed" id="swap-speed-indicator">Swap delay: 50ms</div>
+    </div>
+    
+    <div class="input-group">
+      <label for="presets">Preset Scenarios:</label>
+      <select id="presets" onchange="loadPreset()">
+        <option value="custom">Custom</option>
+        <option value="desktop">Desktop (32MB, 4MB blocks)</option>
+        <option value="embedded">Embedded (8MB, 1MB blocks)</option>
+        <option value="thrashing">Thrashing Scenario</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="simulator-controls">
+    <h2>SIMULATOR</h2>
+    <p class="sample-text">SAMPLE</p>
+    
+    <div class="input-group">
+      <label for="p1">P1</label>
+      <input type="text" id="p1" value="2MB" placeholder="Enter size in MB">
+    </div>
+    
+    <div class="input-group">
+      <label for="p2">P2</label>
+      <input type="text" id="p2" value="2MB" placeholder="Enter size in MB">
+    </div>
+    
+    <div class="input-group">
+      <label for="p3">P3</label>
+      <input type="text" id="p3" value="4MB" placeholder="Enter size in MB">
+    </div>
+    
+    <div class="input-group">
+      <label for="regression-range">Regression range</label>
+      <input type="text" id="regression-range" placeholder="20-30" value="20-30">
+    </div>
+
+    <button class="button" onclick="runSimulation()">Run Simulation</button>
+  </div>
+
+  <div id="memory-container"></div>
+
+  <h2>Process Logs</h2>
+  <div id="log-container"></div>
+
+  <div id="chart-container">
+    <canvas id="memoryChart"></canvas>
+  </div>
+
+  <div id="memory-usage-container">
+    <h2>Memory Usage Over Time</h2>
+    <canvas id="memoryUsageChart"></canvas>
+  </div>
+
+  <div id="cpu-container">
+    <h2>CPU Utilization</h2>
+    <canvas id="cpuChart"></canvas>
+  </div>
+
+  <section>
+    <h2>About / How it Works</h2>
+    <p>This project simulates a hybrid virtual memory management system using FIFO and LRU page replacement algorithms. Interact with memory blocks and observe how allocation, deallocation, and swapping are handled visually in real-time.</p>
+  </section>
+
+  <footer>
+    <p>Developed as a second year project | Computer Science Department</p>
+  </footer>
+
+  <audio id="action-sound" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg"></audio>
+
+  <script>
+    // System Configuration Variables
+    let totalMemory = 16; // MB
+    let blockSize = 2; // MB
+    let swapDelay = 50; // ms
+    let totalFrames = totalMemory / blockSize;
+    let memory = Array(totalFrames).fill("free");
+    let processes = {};
+    let fifoQueue = [];
+    let lruStack = [];
+    let logs = [];
+    let lastClickedBlock = null;
+    let processCounter = 1;
+    let cpuData = Array.from({ length: 10 }, () => 50);
+    let lastMemorySnapshot = [];
+
+
+    // Add these with your other variable declarations at the top
+let chart = null;
+let memoryUsageChart = null;
+let cpuChart = null;
+let memoryUsageHistory = {
+  labels: [],
+  datasets: [
+    { label: 'Free', data: [], backgroundColor: 'red' },
+    { label: 'Allocated', data: [], backgroundColor: 'green' },
+    { label: 'Swapped', data: [], backgroundColor: 'blue' }
+  ]
+};
+
+    const sound = document.getElementById("action-sound");
+    const configurations = {
+      desktop: { memory: 32, blockSize: 4, disk: 'ssd' },
+      embedded: { memory: 8, blockSize: 1, disk: 'hdd' },
+      thrashing: { memory: 8, blockSize: 1, disk: 'hdd', regression: '90-95' }
+    };
+
+    // Initialize the system
+    function initMemorySystem() {
+      totalFrames = totalMemory / blockSize;
+      memory = Array(totalFrames).fill("free");
+      processes = {};
+      fifoQueue = [];
+      lruStack = [];
+      renderMemory();
+      logOperation(`System reconfigured: ${totalMemory}MB total, ${blockSize}MB blocks (${totalFrames} frames)`);
+    }
+
+    // Configuration Update Functions
+    function updateMemorySize() {
+      totalMemory = parseInt(document.getElementById('total-memory').value);
+      document.getElementById('memory-value').textContent = `${totalMemory}MB`;
+      initMemorySystem();
+    }
+
+    function updateBlockSize() {
+      blockSize = parseInt(document.getElementById('block-size').value);
+      initMemorySystem();
+    }
+
+    function updateDiskSpeed() {
+      const diskType = document.getElementById('disk-type').value;
+      switch(diskType) {
+        case 'hdd': swapDelay = 50; break;
+        case 'ssd': swapDelay = 10; break;
+        case 'nvme': swapDelay = 2; break;
+      }
+      document.getElementById('swap-speed-indicator').textContent = `Swap delay: ${swapDelay}ms`;
+      logOperation(`Disk type set to ${diskType.toUpperCase()} (${swapDelay}ms swap delay)`);
+    }
+
+    function loadPreset() {
+      const preset = document.getElementById('presets').value;
+      if (preset === 'custom') return;
+      
+      const config = configurations[preset];
+      document.getElementById('total-memory').value = config.memory;
+      document.getElementById('memory-value').textContent = `${config.memory}MB`;
+      document.getElementById('block-size').value = config.blockSize;
+      document.getElementById('disk-type').value = config.disk;
+      
+      if (preset === 'thrashing') {
+        document.getElementById('regression-range').value = '90-95';
+      }
+      
+      totalMemory = config.memory;
+      blockSize = config.blockSize;
+      updateDiskSpeed();
+      initMemorySystem();
+      
+      if (preset === 'thrashing') {
+        logOperation("Thrashing scenario loaded - system will aggressively swap");
+      }
+    }
+
+    // Modified swapMemory to use configured delay
+    function swapMemory() {
+      const allocatedIndex = memory.indexOf("allocated");
+      if (allocatedIndex !== -1) {
+        logOperation(`Swapping Process P${processes[allocatedIndex]} (${swapDelay}ms delay)`);
+        memory[allocatedIndex] = "swapping"; // Intermediate state
+        renderMemory();
+        
+        setTimeout(() => {
+          memory[allocatedIndex] = "swapped"; // Final state
+          logOperation(`Swapped Process P${processes[allocatedIndex]} at Block ${allocatedIndex}`);
+          playSound();
+          renderMemory();
+          updateMemoryUsageChart(); // Force update after swap
+        }, swapDelay);
+      } else {
+        alert("No allocated memory to swap.");
+      }
+    }
+
+    // [Rest of your existing functions remain exactly the same...]
+    // Only the swapMemory() function was modified to use swapDelay
+    // All other functions (renderMemory, logOperation, etc.) stay identical
+    /* ====== ALL THESE FUNCTIONS REMAIN EXACTLY AS IN YOUR ORIGINAL CODE ====== */
+
+function playSound() {
+  sound.currentTime = 0;
+  sound.play();
+}
+
+function renderMemory() {
+  const container = document.getElementById("memory-container");
+  container.innerHTML = "";
+  memory.forEach((status, index) => {
+    const block = document.createElement("div");
+    block.className = `memory-block ${status}`;
+    block.innerText = processes[index] ? `P${processes[index]}` : index;
+    block.onclick = () => markAsRecentlyUsed(index, block);
+    container.appendChild(block);
+  });
+  updateChart();
+}
+
+function logOperation(message) {
+  const logContainer = document.getElementById("log-container");
+  const logEntry = document.createElement("p");
+  logEntry.innerText = message;
+  logContainer.appendChild(logEntry);
+  logContainer.scrollTop = logContainer.scrollHeight;
+  logs.push({ time: new Date().toLocaleTimeString(), message });
+}
+
+function exportLogs() {
+  const blob = new Blob([JSON.stringify(logs, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "memory_logs.json";
+  a.click();
+}
+
+function markAsRecentlyUsed(index, block) {
+  if (lastClickedBlock) lastClickedBlock.classList.remove("selected");
+  block.classList.add("selected");
+  lastClickedBlock = block;
+  lruStack = lruStack.filter(i => i !== index);
+  lruStack.push(index);
+}
+
+function parseRegressionRange() {
+  const rangeInput = document.getElementById('regression-range').value.trim();
+  const rangeParts = rangeInput.split('-').map(part => parseInt(part.trim()));
+  
+  if (rangeParts.length !== 2 || isNaN(rangeParts[0]) || isNaN(rangeParts[1])) {
+    logOperation("Invalid regression range. Using default 20-30%");
+    return [20, 30];
+  }
+  
+  const min = Math.min(rangeParts[0], rangeParts[1]);
+  const max = Math.max(rangeParts[0], rangeParts[1]);
+  
+  return [min, max];
+}
+
+function checkMemoryPressure() {
+  const [minRange, maxRange] = parseRegressionRange();
+  const usedBlocks = memory.filter(b => b === "allocated").length;
+  const usagePercent = (usedBlocks / totalFrames) * 100;
+  
+  if (usagePercent > maxRange) {
+    const simControls = document.querySelector('.simulator-controls');
+    simControls.classList.add('memory-pressure');
+    logOperation(`Memory pressure detected (${usagePercent.toFixed(1)}% > ${maxRange}%)`);
+    
+    // Calculate exact blocks to free
+    const targetBlocks = Math.floor((maxRange / 100) * totalFrames);
+    const blocksToFree = usedBlocks - targetBlocks;
+    
+    let freedBlocks = 0;
+    while (freedBlocks < blocksToFree && lruStack.length > 0) {
+      const leastRecentlyUsed = lruStack.shift();
+      if (memory[leastRecentlyUsed] === "allocated") {
+        // Mark as swapping first (visual feedback)
+        memory[leastRecentlyUsed] = "swapping";
+        renderMemory();
+        
+        setTimeout(() => {
+          // Complete the swap after delay
+          memory[leastRecentlyUsed] = "swapped";
+          logOperation(`Swapped P${processes[leastRecentlyUsed]} at Block ${leastRecentlyUsed}`);
+          renderMemory();
+          updateMemoryUsageChart(); // Explicit update
+        }, swapDelay);
+        
+        freedBlocks++;
+      }
+    }
+    
+    simControls.classList.remove('memory-pressure');
+    if (freedBlocks > 0) {
+      logOperation(`Freed ${freedBlocks} blocks to reduce memory pressure`);
+    }
+    // Immediate visual update
+    updateMemoryUsageChart();
+  }
+}
+
+function runSimulation() {
+  const p1Size = parseInt(document.getElementById('p1').value) || 0;
+  const p2Size = parseInt(document.getElementById('p2').value) || 0;
+  const p3Size = parseInt(document.getElementById('p3').value) || 0;
+  const regressionRange = document.getElementById('regression-range').value;
+
+  memory = Array(totalFrames).fill("free");
+  processes = {};
+  fifoQueue = [];
+  lruStack = [];
+  processCounter = 1;
+  
+  allocateProcess('P1', p1Size);
+  allocateProcess('P2', p2Size);
+  allocateProcess('P3', p3Size);
+  
+  logOperation(`Started simulation with P1:${p1Size}MB, P2:${p2Size}MB, P3:${p3Size}MB, Regression: ${regressionRange}`);
+  checkMemoryPressure();
+  renderMemory();
+  updateMemoryUsageChart();
+}
+
+function allocateProcess(processName, sizeInMB) {
+  if (sizeInMB <= 0) return;
+  
+  const blocksNeeded = Math.ceil(sizeInMB / blockSize);
+  let allocatedBlocks = 0;
+  
+  while (allocatedBlocks < blocksNeeded) {
+    const freeIndex = memory.indexOf("free");
+    if (freeIndex !== -1) {
+      memory[freeIndex] = "allocated";
+      processes[freeIndex] = processName.substring(1);
+      fifoQueue.push(freeIndex);
+      lruStack.push(freeIndex);
+      allocatedBlocks++;
+      logOperation(`Allocated block ${freeIndex} for ${processName}`);
+      
+      // ONLY ADDED THIS LINE (triggers immediate graph update):
+      updateMemoryUsageChart();
+    } else {
+      logOperation(`Insufficient memory to fully allocate ${processName}`);
+      break;
+    }
+  }
+  
+  if (allocatedBlocks > 0) {
+    logOperation(`Allocated ${allocatedBlocks} blocks (${allocatedBlocks * blockSize}MB) for ${processName}`);
+  }
+  // No other changes made to the function
+}
+
+function allocateMemory() {
+  const freeIndex = memory.indexOf("free");
+  if (freeIndex !== -1) {
+    memory[freeIndex] = "allocated";
+    processes[freeIndex] = processCounter++;
+    fifoQueue.push(freeIndex);
+    lruStack = lruStack.filter(i => i !== freeIndex);
+    lruStack.push(freeIndex);
+    logOperation(`Allocated memory to Process P${processes[freeIndex]} at Block ${freeIndex}`);
+    playSound();
+    renderMemory();
+    updateMemoryUsageChart();
+    checkMemoryPressure();
+  } else {
+    alert("No free memory available! Consider using FIFO or LRU.");
+  }
+}
+
+function freeMemory() {
+  if (lruStack.length > 0) {
+    const index = lruStack.pop();
+    logOperation(`Freed memory from Process P${processes[index]} at Block ${index}`);
+    delete processes[index];
+    memory[index] = "free";
+    fifoQueue = fifoQueue.filter(i => i !== index);
+    playSound();
+    renderMemory();
+    updateMemoryUsageChart();
+  } else {
+    alert("No allocated memory to free.");
+  }
+}
+
+function applyFIFO() {
+  if (fifoQueue.length > 0) {
+    const oldestPage = fifoQueue.shift();
+    logOperation(`FIFO: Replaced Process P${processes[oldestPage]} at Block ${oldestPage}`);
+    delete processes[oldestPage];
+    memory[oldestPage] = "free";
+    playSound();
+    renderMemory();
+    updateMemoryUsageChart();
+  } else {
+    alert("No allocated pages to replace.");
+  }
+}
+
+function applyLRU() {
+  if (lruStack.length > 0) {
+    const leastRecentlyUsed = lruStack.shift();
+    logOperation(`LRU: Replaced Process P${processes[leastRecentlyUsed]} at Block ${leastRecentlyUsed}`);
+    delete processes[leastRecentlyUsed];
+    memory[leastRecentlyUsed] = "free";
+    playSound();
+    renderMemory();
+    updateMemoryUsageChart();
+  } else {
+    alert("No allocated pages to replace.");
+  }
+}
+
+function updateChart() {
+  const counts = memory.reduce((acc, val) => {
+    acc[val] = (acc[val] || 0) + 1;
+    return acc;
+  }, {});
+  const data = {
+    labels: ['Free', 'Allocated', 'Swapped'],
+    datasets: [{
+      data: [counts.free || 0, counts.allocated || 0, counts.swapped || 0],
+      backgroundColor: ['red', 'green', 'blue']
+    }]
+  };
+  if (chart) chart.destroy();
+  chart = new Chart(document.getElementById('memoryChart'), { type: 'doughnut', data });
+}
+
+function updateMemoryUsageChart() {
+  // More accurate counting method:
+  const counts = {
+    free: memory.filter(b => b === "free").length,
+    allocated: memory.filter(b => b === "allocated").length,
+    swapped: memory.filter(b => b === "swapped").length
+  };
+
+  // Rest of your existing chart code remains exactly the same...
+  const timestamp = new Date().toLocaleTimeString();
+
+  if (memoryUsageHistory.labels.length >= 10) {
+    memoryUsageHistory.labels.shift();
+    memoryUsageHistory.datasets.forEach(d => d.data.shift());
+  }
+
+  memoryUsageHistory.labels.push(timestamp);
+  memoryUsageHistory.datasets[0].data.push(counts.free);
+  memoryUsageHistory.datasets[1].data.push(counts.allocated);
+  memoryUsageHistory.datasets[2].data.push(counts.swapped);
+
+  if (memoryUsageChart) memoryUsageChart.destroy();
+  memoryUsageChart = new Chart(document.getElementById('memoryUsageChart'), {
+    type: 'bar',
+    data: memoryUsageHistory,
+    options: {
+      responsive: true,
+      scales: {
+        x: { stacked: true },
+        y: { 
+          beginAtZero: true, 
+          max: totalFrames, 
+          stacked: true,
+          ticks: {
+            precision: 0 // Ensures whole numbers on Y-axis
+          }
+        }
+      }
+    }
+  });
+}
+
+function updateCPUChart() {
+  cpuData.shift();
+  cpuData.push(Math.max(0, Math.min(100, cpuData[cpuData.length - 1] + (Math.random() * 20 - 10))));
+
+  const data = {
+    labels: Array.from({ length: 10 }, (_, i) => `${10 - i}s ago`),
+    datasets: [{
+      label: 'CPU Utilization (%)',
+      data: [...cpuData],
+      backgroundColor: 'rgba(255, 206, 86, 0.5)',
+      borderColor: 'rgba(255, 206, 86, 1)',
+      fill: true
+    }]
+  };
+
+  if (cpuChart) cpuChart.destroy();
+  cpuChart = new Chart(document.getElementById('cpuChart'), {
+    type: 'line',
+    data,
+    options: {
+      responsive: true,
+      scales: {
+        y: {
+          beginAtZero: true,
+          max: 100
+        }
+      }
+    }
+  });
+}
+    // Initialize the page
+    //initMemorySystem();
+    renderMemory();
+    updateCPUChart();
+    updateMemoryUsageChart();
+    setInterval(updateCPUChart, 5000);
+    setInterval(updateMemoryUsageChart, 5000);
+    setInterval(checkMemoryPressure, 2000);
+  </script>
+</body>
+</html>
